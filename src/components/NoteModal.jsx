@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { imageUrl } from '../imageUrl.js';
 
 export default function NoteModal({ note, onClose, onDelete }) {
   const [imgIdx, setImgIdx] = useState(0);
@@ -33,7 +34,7 @@ export default function NoteModal({ note, onClose, onDelete }) {
           {total > 0 ? (
             <img
               key={imgIdx}
-              src={note.images[imgIdx]}
+              src={imageUrl(note.images[imgIdx])}
               alt=""
               className="w-full h-full object-contain"
               style={{ maxHeight: '90vh' }}

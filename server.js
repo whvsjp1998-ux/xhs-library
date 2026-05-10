@@ -215,6 +215,41 @@ app.get('/notes', async (req, res) => {
   }
 });
 
+app.get('/image-proxy', async (req, res) => {
+  const rawUrl = String(req.query.url || '');
+
+  if (!/^https?:\/\//i.test(rawUrl)) {
+    res.status(400).send('Invalid image URL');
+    return;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    if (!/(^|\.)xhscdn\.com$|(^|\.)xiaohongshu\.com$/i.test(url.hostname)) {
+      res.status(400).send('Unsupported image host');
+      return;
+    }
+
+    const upstream = await axios.get(rawUrl, {
+      responseType: 'stream',
+      timeout: 20000,
+      headers: {
+        Referer: 'https://www.xiaohongshu.com/',
+        Origin: 'https://www.xiaohongshu.com',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
+      },
+    });
+
+    res.setHeader('Content-Type', upstream.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    upstream.data.pipe(res);
+  } catch (e) {
+    console.error('[image-proxy] error:', e.message);
+    res.status(502).send('Image fetch failed');
+  }
+});
+
 app.delete('/notes/:id', async (req, res) => {
   let client;
   try {

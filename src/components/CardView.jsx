@@ -1,4 +1,5 @@
 import Masonry from 'react-masonry-css';
+import { imageUrl } from '../imageUrl.js';
 
 const breakpointCols = {
   default: 4,
@@ -23,7 +24,7 @@ export default function CardView({ notes, onDelete, onSelect }) {
         >
           {note.images[0] && (
             <img
-              src={note.images[0]}
+              src={imageUrl(note.images[0])}
               alt=""
               className="w-full block"
             />

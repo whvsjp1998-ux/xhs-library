@@ -103,6 +103,45 @@ export default function App() {
     fetchCollections();
   };
 
+  const renameCollection = async (oldName, newName) => {
+    const next = newName.trim();
+    if (!oldName || !next) return;
+
+    const res = await fetch(`${API}/collections/${encodeURIComponent(oldName)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: next }),
+    });
+    if (!res.ok) return;
+
+    setCollections((current) => (
+      current.map((collection) => collection === oldName ? next : collection).sort()
+    ));
+    setNotes((current) => current.map((note) => (
+      note.collection === oldName ? { ...note, collection: next } : note
+    )));
+    setSelectedNote((note) => (
+      note && note.collection === oldName ? { ...note, collection: next } : note
+    ));
+    if (selectedCollection === oldName) setSelectedCollection(next);
+  };
+
+  const deleteCollection = async (name) => {
+    const res = await fetch(`${API}/collections/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) return;
+
+    setCollections((current) => current.filter((collection) => collection !== name));
+    setNotes((current) => current.map((note) => (
+      note.collection === name ? { ...note, collection: '' } : note
+    )));
+    setSelectedNote((note) => (
+      note && note.collection === name ? { ...note, collection: '' } : note
+    ));
+    if (selectedCollection === name) setSelectedCollection('');
+  };
+
   const deleteNote = async (id) => {
     await fetch(`${API}/notes/${id}`, { method: 'DELETE' });
     setSelectedNote(null);
@@ -151,6 +190,8 @@ export default function App() {
             selected={selectedCollection}
             onSelect={setSelectedCollection}
             onCreate={createCollection}
+            onRename={renameCollection}
+            onDelete={deleteCollection}
           />
           <TagFilter tags={tags} selected={selectedTag} onSelect={setSelectedTag} />
         </aside>

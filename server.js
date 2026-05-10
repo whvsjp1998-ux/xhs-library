@@ -300,6 +300,62 @@ app.post('/collections', async (req, res) => {
   }
 });
 
+app.patch('/collections/:name', async (req, res) => {
+  const oldName = String(req.params.name || '').trim().slice(0, 80);
+  const newName = String(req.body?.name || '').trim().slice(0, 80);
+
+  if (!oldName || !newName) {
+    res.status(400).json({ success: false, error: 'Collection name is required' });
+    return;
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(
+      'INSERT INTO collections (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+      [newName]
+    );
+    await client.query('UPDATE notes SET collection = $1 WHERE collection = $2', [newName, oldName]);
+    if (oldName !== newName) {
+      await client.query('DELETE FROM collections WHERE name = $1', [oldName]);
+    }
+    await client.query('COMMIT');
+    res.json({ success: true, name: newName });
+  } catch (e) {
+    await client?.query('ROLLBACK').catch(() => {});
+    console.error('[collections] rename error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  } finally {
+    client?.release();
+  }
+});
+
+app.delete('/collections/:name', async (req, res) => {
+  const name = String(req.params.name || '').trim().slice(0, 80);
+  if (!name) {
+    res.status(400).json({ success: false, error: 'Collection name is required' });
+    return;
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query("UPDATE notes SET collection = '' WHERE collection = $1", [name]);
+    await client.query('DELETE FROM collections WHERE name = $1', [name]);
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (e) {
+    await client?.query('ROLLBACK').catch(() => {});
+    console.error('[collections] delete error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  } finally {
+    client?.release();
+  }
+});
+
 app.get('/image-proxy', async (req, res) => {
   const rawUrl = String(req.query.url || '');
 

@@ -1,6 +1,13 @@
 import { useState } from 'react';
 
-export default function CollectionFilter({ collections, selected, onSelect, onCreate }) {
+export default function CollectionFilter({
+  collections,
+  selected,
+  onSelect,
+  onCreate,
+  onRename,
+  onDelete,
+}) {
   const [name, setName] = useState('');
 
   const create = () => {
@@ -9,6 +16,17 @@ export default function CollectionFilter({ collections, selected, onSelect, onCr
     onCreate(next);
     onSelect(next);
     setName('');
+  };
+
+  const rename = (collection) => {
+    const next = prompt('重命名合集', collection)?.trim();
+    if (!next || next === collection) return;
+    onRename(collection, next);
+  };
+
+  const remove = (collection) => {
+    if (!confirm(`删除合集「${collection}」？合集里的笔记会移回“未归入合集”。`)) return;
+    onDelete(collection);
   };
 
   return (
@@ -28,17 +46,33 @@ export default function CollectionFilter({ collections, selected, onSelect, onCr
           全部
         </button>
         {collections.map((collection) => (
-          <button
-            key={collection}
-            onClick={() => onSelect(collection === selected ? '' : collection)}
-            className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate transition-colors ${
-              selected === collection
-                ? 'bg-[#ff2442] text-white font-medium'
-                : 'text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {collection}
-          </button>
+          <div key={collection} className="group flex items-center gap-1">
+            <button
+              onClick={() => onSelect(collection === selected ? '' : collection)}
+              className={`min-w-0 flex-1 text-left px-3 py-1.5 rounded-lg text-sm truncate transition-colors ${
+                selected === collection
+                  ? 'bg-[#ff2442] text-white font-medium'
+                  : 'text-gray-600 hover:bg-gray-200'
+              }`}
+              title={collection}
+            >
+              {collection}
+            </button>
+            <button
+              onClick={() => rename(collection)}
+              className="px-1.5 py-1 rounded text-[11px] text-gray-400 hover:text-gray-700 hover:bg-gray-200"
+              title="重命名"
+            >
+              改
+            </button>
+            <button
+              onClick={() => remove(collection)}
+              className="px-1.5 py-1 rounded text-[11px] text-gray-400 hover:text-red-500 hover:bg-red-50"
+              title="删除"
+            >
+              删
+            </button>
+          </div>
         ))}
       </div>
       <div className="flex gap-1">

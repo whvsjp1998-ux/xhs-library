@@ -19,6 +19,14 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
+process.on('unhandledRejection', (reason) => {
+  console.error('[process] unhandled rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[process] uncaught exception:', error);
+});
+
 async function initDb() {
   const client = await pool.connect();
   try {
@@ -119,9 +127,10 @@ app.post('/import', async (req, res) => {
   console.log(`[import] "${title}" - ${cleanImages.length} images`);
 
   const tags = await generateTags(title, content);
-  const client = await pool.connect();
+  let client;
 
   try {
+    client = await pool.connect();
     const result = await client.query(
       'INSERT INTO notes (title, content, images, tags, url) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [title, content, JSON.stringify(cleanImages), JSON.stringify(tags), url]
@@ -132,7 +141,7 @@ app.post('/import', async (req, res) => {
     console.error('[import] error:', e.message);
     res.status(500).json({ success: false, error: e.message });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
@@ -164,8 +173,9 @@ app.get('/notes', async (req, res) => {
   if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ' ORDER BY created_at DESC';
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const result = await client.query(sql, params);
     res.json(result.rows.map((row) => ({
       ...row,
@@ -176,26 +186,28 @@ app.get('/notes', async (req, res) => {
     console.error('[notes] error:', e.message);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
 app.delete('/notes/:id', async (req, res) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query('DELETE FROM notes WHERE id = $1', [Number(req.params.id)]);
     res.json({ success: true });
   } catch (e) {
     console.error('[delete] error:', e.message);
     res.status(500).json({ success: false, error: e.message });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
 app.get('/tags', async (req, res) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const result = await client.query('SELECT tags FROM notes');
     const all = new Set();
     result.rows.forEach((row) => {
@@ -206,7 +218,7 @@ app.get('/tags', async (req, res) => {
     console.error('[tags] error:', e.message);
     res.status(500).json({ error: e.message });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 

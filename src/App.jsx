@@ -5,7 +5,19 @@ import TagFilter from './components/TagFilter.jsx';
 import SearchBar from './components/SearchBar.jsx';
 import NoteModal from './components/NoteModal.jsx';
 
-const API = 'http://localhost:3001';
+function getApiBase() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/$/, '');
+  }
+
+  if (window.location.port === '5173') {
+    return 'http://localhost:3001';
+  }
+
+  return window.location.origin;
+}
+
+const API = getApiBase();
 
 export default function App() {
   const [notes, setNotes] = useState([]);

@@ -3,9 +3,13 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { Pool } from 'pg';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distPath = path.join(__dirname, 'dist');
 
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
@@ -35,7 +39,9 @@ async function initDb() {
   }
 }
 
-initDb();
+initDb().catch((e) => {
+  console.error('[db] init failed:', e.message);
+});
 
 async function fetchImageBase64(url) {
   try {
@@ -121,7 +127,6 @@ app.get('/notes', async (req, res) => {
   if (search) {
     conditions.push(`(title ILIKE $${params.length + 1} OR content ILIKE $${params.length + 1})`);
     params.push(`%${search}%`);
-    params.push(`%${search}%`);
   }
   if (tag) {
     conditions.push(`tags ILIKE $${params.length + 1}`);
@@ -173,6 +178,12 @@ app.get('/tags', async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+app.use(express.static(distPath));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, () => console.log(`✅ Server: http://localhost:${PORT}`));

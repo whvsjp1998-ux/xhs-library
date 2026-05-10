@@ -12,11 +12,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, 'dist');
 
 app.use(cors());
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
 async function initDb() {
@@ -33,7 +33,7 @@ async function initDb() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    console.log('✅ Database initialized');
+    console.log('Database initialized');
   } finally {
     client.release();
   }
@@ -43,33 +43,36 @@ initDb().catch((e) => {
   console.error('[db] init failed:', e.message);
 });
 
-async function fetchImageBase64(url) {
+function normalizeImages(images) {
+  if (!Array.isArray(images)) return [];
+
+  const seen = new Set();
+  return images
+    .filter((url) => typeof url === 'string')
+    .map((url) => url.trim())
+    .filter((url) => url && !url.endsWith('base64,'))
+    .filter((url) => /^https?:\/\//i.test(url) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(url))
+    .filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    })
+    .slice(0, 60);
+}
+
+function parseJsonArray(value) {
   try {
-    const { data, headers } = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 15000,
-      headers: {
-        Referer: 'https://www.xiaohongshu.com/',
-        Origin: 'https://www.xiaohongshu.com',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'sec-fetch-dest': 'image',
-        'sec-fetch-mode': 'no-cors',
-        'sec-fetch-site': 'cross-site',
-      },
-    });
-    const mime = (headers['content-type'] || 'image/jpeg').split(';')[0];
-    return `data:${mime};base64,${Buffer.from(data).toString('base64')}`;
-  } catch (e) {
-    console.warn('[image] failed:', url.slice(0, 80), e.message);
-    return null;
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }
 
 async function generateTags(title, content) {
   const key = process.env.SILICONFLOW_API_KEY;
   if (!key) return [];
+
   try {
     const { data } = await axios.post(
       'https://api.siliconflow.cn/v1/chat/completions',
@@ -77,39 +80,54 @@ async function generateTags(title, content) {
         model: 'deepseek-ai/DeepSeek-V3',
         messages: [{
           role: 'user',
-          content: `以下是一篇小红书笔记，请提取 3-5 个中文标签词，只返回 JSON 数组，例如 ["护肤","平价好物"]。标题：${title}，内容：${content}`
+          content: `以下是一篇小红书笔记，请提取 3-5 个中文标签词，只返回 JSON 数组，例如 ["护肤","平价好物"]。标题：${title}，内容：${content}`,
         }],
         max_tokens: 120,
         temperature: 0.3,
       },
-      { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 20000 }
+      {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 20000,
+      }
     );
-    const text = data.choices[0].message.content.trim();
+
+    const text = data.choices?.[0]?.message?.content?.trim() || '';
     const match = text.match(/\[[\s\S]*?\]/);
     if (match) return JSON.parse(match[0]);
   } catch (e) {
     console.error('[tags] failed:', e.message);
   }
+
   return [];
 }
 
+app.get('/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post('/import', async (req, res) => {
   const { title = '', content = '', images = [], url = '' } = req.body;
-  console.log(`[import] "${title}" — ${images.length} images`);
+  const cleanImages = normalizeImages(images);
+  console.log(`[import] "${title}" - ${cleanImages.length} images`);
 
-  const [base64Images, tags] = await Promise.all([
-    Promise.all(images.map(fetchImageBase64)).then(r => r.filter(Boolean)),
-    generateTags(title, content)
-  ]);
-
+  const tags = await generateTags(title, content);
   const client = await pool.connect();
+
   try {
     const result = await client.query(
       'INSERT INTO notes (title, content, images, tags, url) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [title, content, JSON.stringify(base64Images), JSON.stringify(tags), url]
+      [title, content, JSON.stringify(cleanImages), JSON.stringify(tags), url]
     );
     console.log(`[import] saved id=${result.rows[0].id}, tags=${tags.join(',')}`);
-    res.json({ success: true, id: result.rows[0].id, tags });
+    res.json({ success: true, id: result.rows[0].id, tags, images: cleanImages.length });
   } catch (e) {
     console.error('[import] error:', e.message);
     res.status(500).json({ success: false, error: e.message });
@@ -120,7 +138,17 @@ app.post('/import', async (req, res) => {
 
 app.get('/notes', async (req, res) => {
   const { search, tag } = req.query;
-  let sql = 'SELECT * FROM notes';
+  let sql = `
+    SELECT
+      id,
+      title,
+      content,
+      CASE WHEN length(images) > 1000000 THEN '[]' ELSE images END AS images,
+      tags,
+      url,
+      created_at
+    FROM notes
+  `;
   const params = [];
   const conditions = [];
 
@@ -139,10 +167,10 @@ app.get('/notes', async (req, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(sql, params);
-    res.json(result.rows.map(r => ({
-      ...r,
-      images: JSON.parse(r.images),
-      tags: JSON.parse(r.tags)
+    res.json(result.rows.map((row) => ({
+      ...row,
+      images: parseJsonArray(row.images),
+      tags: parseJsonArray(row.tags),
     })));
   } catch (e) {
     console.error('[notes] error:', e.message);
@@ -170,7 +198,9 @@ app.get('/tags', async (req, res) => {
   try {
     const result = await client.query('SELECT tags FROM notes');
     const all = new Set();
-    result.rows.forEach(r => JSON.parse(r.tags).forEach(t => all.add(t)));
+    result.rows.forEach((row) => {
+      parseJsonArray(row.tags).forEach((tag) => all.add(tag));
+    });
     res.json([...all]);
   } catch (e) {
     console.error('[tags] error:', e.message);
@@ -186,4 +216,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => console.log(`✅ Server: http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Server: http://localhost:${PORT}`));

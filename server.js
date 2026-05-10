@@ -93,30 +93,6 @@ function normalizeImages(images) {
     .slice(0, 1);
 }
 
-async function fetchImageBase64(url) {
-  if (!/^https?:\/\//i.test(url)) return url;
-
-  try {
-    const { data, headers } = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 20000,
-      headers: {
-        Referer: 'https://www.xiaohongshu.com/',
-        Origin: 'https://www.xiaohongshu.com',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        Accept: 'image/webp,image/apng,image/*,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-      },
-    });
-    const mime = (headers['content-type'] || 'image/jpeg').split(';')[0];
-    if (!mime.startsWith('image/')) return url;
-    return `data:${mime};base64,${Buffer.from(data).toString('base64')}`;
-  } catch (e) {
-    console.warn('[image] keeping original URL:', e.message);
-    return url;
-  }
-}
-
 function parseJsonArray(value) {
   try {
     const parsed = JSON.parse(value || '[]');
@@ -175,20 +151,17 @@ app.post('/import', async (req, res) => {
   const cleanImages = normalizeImages(images);
   console.log(`[import] "${title}" - ${cleanImages.length} images`);
 
-  const [storedImages, tags] = await Promise.all([
-    Promise.all(cleanImages.map(fetchImageBase64)),
-    generateTags(title, content),
-  ]);
+  const tags = await generateTags(title, content);
   let client;
 
   try {
     client = await pool.connect();
     const result = await client.query(
       'INSERT INTO notes (title, content, images, tags, url) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [title, content, JSON.stringify(storedImages), JSON.stringify(tags), url]
+      [title, content, JSON.stringify(cleanImages), JSON.stringify(tags), url]
     );
     console.log(`[import] saved id=${result.rows[0].id}, tags=${tags.join(',')}`);
-    res.json({ success: true, id: result.rows[0].id, tags, images: storedImages.length });
+    res.json({ success: true, id: result.rows[0].id, tags, images: cleanImages.length });
   } catch (e) {
     console.error('[import] error:', e.message);
     res.status(500).json({ success: false, error: e.message });

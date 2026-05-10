@@ -61,6 +61,7 @@ async function initDb() {
         title      TEXT    NOT NULL DEFAULT '',
         content    TEXT    NOT NULL DEFAULT '',
         images     TEXT    NOT NULL DEFAULT '[]',
+        videos     TEXT    NOT NULL DEFAULT '[]',
         tags       TEXT    NOT NULL DEFAULT '[]',
         collection TEXT    NOT NULL DEFAULT '',
         url        TEXT    NOT NULL DEFAULT '',
@@ -68,6 +69,7 @@ async function initDb() {
       )
     `);
     await client.query("ALTER TABLE notes ADD COLUMN IF NOT EXISTS collection TEXT NOT NULL DEFAULT ''");
+    await client.query("ALTER TABLE notes ADD COLUMN IF NOT EXISTS videos TEXT NOT NULL DEFAULT '[]'");
     await client.query(`
       CREATE TABLE IF NOT EXISTS collections (
         name       TEXT PRIMARY KEY,
@@ -108,6 +110,22 @@ function parseJsonArray(value) {
   } catch {
     return [];
   }
+}
+
+function normalizeVideos(videos) {
+  if (!Array.isArray(videos)) return [];
+
+  const seen = new Set();
+  return videos
+    .filter((url) => typeof url === 'string')
+    .map((url) => url.trim())
+    .filter((url) => /^https?:\/\//i.test(url))
+    .filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    })
+    .slice(0, 5);
 }
 
 async function generateTags(title, content) {
@@ -155,9 +173,10 @@ app.get('/health', async (req, res) => {
 });
 
 app.post('/import', async (req, res) => {
-  const { title = '', content = '', images = [], url = '' } = req.body;
+  const { title = '', content = '', images = [], videos = [], url = '' } = req.body;
   const cleanImages = normalizeImages(images);
-  console.log(`[import] "${title}" - ${cleanImages.length} images`);
+  const cleanVideos = normalizeVideos(videos);
+  console.log(`[import] "${title}" - ${cleanImages.length} images, ${cleanVideos.length} videos`);
 
   const tags = await generateTags(title, content);
   let client;
@@ -165,11 +184,11 @@ app.post('/import', async (req, res) => {
   try {
     client = await pool.connect();
     const result = await client.query(
-      'INSERT INTO notes (title, content, images, tags, url) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [title, content, JSON.stringify(cleanImages), JSON.stringify(tags), url]
+      'INSERT INTO notes (title, content, images, videos, tags, url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [title, content, JSON.stringify(cleanImages), JSON.stringify(cleanVideos), JSON.stringify(tags), url]
     );
     console.log(`[import] saved id=${result.rows[0].id}, tags=${tags.join(',')}`);
-    res.json({ success: true, id: result.rows[0].id, tags, images: cleanImages.length });
+    res.json({ success: true, id: result.rows[0].id, tags, images: cleanImages.length, videos: cleanVideos.length });
   } catch (e) {
     console.error('[import] error:', e.message);
     res.status(500).json({ success: false, error: e.message });
@@ -186,6 +205,7 @@ app.get('/notes', async (req, res) => {
       title,
       content,
       CASE WHEN length(images) > 1000000 THEN '[]' ELSE images END AS images,
+      videos,
       tags,
       collection,
       url,
@@ -218,6 +238,7 @@ app.get('/notes', async (req, res) => {
     res.json(result.rows.map((row) => ({
       ...row,
       images: parseJsonArray(row.images),
+      videos: parseJsonArray(row.videos),
       tags: parseJsonArray(row.tags),
     })));
   } catch (e) {

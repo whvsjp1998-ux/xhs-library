@@ -4,6 +4,7 @@ import { imageUrl } from '../imageUrl.js';
 export default function NoteModal({ note, collections, onClose, onDelete, onMove }) {
   const [imgIdx, setImgIdx] = useState(0);
   const total = note.images.length;
+  const videoTotal = note.videos?.length || 0;
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -38,6 +39,14 @@ export default function NoteModal({ note, collections, onClose, onDelete, onMove
               alt=""
               className="w-full h-full object-contain"
               style={{ maxHeight: '90vh' }}
+            />
+          ) : videoTotal > 0 ? (
+            <video
+              src={note.videos[0]}
+              className="w-full h-full object-contain"
+              style={{ maxHeight: '90vh' }}
+              controls
+              playsInline
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">

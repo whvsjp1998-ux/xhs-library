@@ -143,9 +143,13 @@ export default function App() {
   };
 
   const deleteNote = async (id) => {
-    await fetch(`${API}/notes/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API}/notes/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      alert('删除失败，请刷新后重试');
+      return;
+    }
+    setNotes((current) => current.filter((note) => note.id !== id));
     setSelectedNote(null);
-    fetchNotes();
     fetchTags();
     fetchCollections();
   };

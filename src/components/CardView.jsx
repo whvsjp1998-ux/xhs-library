@@ -29,6 +29,14 @@ export default function CardView({ notes, collections, onDelete, onMove, onSelec
               className="w-full block"
             />
           )}
+          {!note.images[0] && note.videos?.[0] && (
+            <video
+              src={note.videos[0]}
+              className="w-full block bg-black"
+              controls
+              playsInline
+            />
+          )}
           <div className="p-3">
             <h3 className="font-semibold text-gray-800 text-sm mb-2 line-clamp-2 leading-snug">
               {note.title}

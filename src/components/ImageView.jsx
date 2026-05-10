@@ -28,6 +28,13 @@ export default function ImageView({ notes, onSelect }) {
               alt=""
               className="w-full block"
             />
+          ) : note.videos?.[0] ? (
+            <video
+              src={note.videos[0]}
+              className="w-full block bg-black"
+              controls
+              playsInline
+            />
           ) : (
             <div className="w-full h-36 flex items-center justify-center text-gray-400 text-sm select-none">
               无图片

@@ -90,7 +90,7 @@ function normalizeImages(images) {
       seen.add(url);
       return true;
     })
-    .slice(0, 1);
+    .slice(0, 30);
 }
 
 function parseJsonArray(value) {

@@ -3,8 +3,11 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { Pool } from 'pg';
+import dns from 'dns';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
 const PORT = process.env.PORT || 3001;

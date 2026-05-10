@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import CardView from './components/CardView.jsx';
 import ImageView from './components/ImageView.jsx';
 import TagFilter from './components/TagFilter.jsx';
+import CollectionFilter from './components/CollectionFilter.jsx';
 import SearchBar from './components/SearchBar.jsx';
 import NoteModal from './components/NoteModal.jsx';
 
@@ -22,9 +23,11 @@ const API = getApiBase();
 export default function App() {
   const [notes, setNotes] = useState([]);
   const [tags, setTags] = useState([]);
+  const [collections, setCollections] = useState([]);
   const [view, setView] = useState('card');
   const [search, setSearch] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
+  const [selectedCollection, setSelectedCollection] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedNote, setSelectedNote] = useState(null);
   const [error, setError] = useState('');
@@ -35,6 +38,8 @@ export default function App() {
     const p = new URLSearchParams();
     if (search) p.set('search', search);
     if (selectedTag) p.set('tag', selectedTag);
+    if (selectedCollection) p.set('collection', selectedCollection);
+
     try {
       const res = await fetch(`${API}/notes?${p}`);
       const data = await res.json();
@@ -48,7 +53,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [search, selectedTag]);
+  }, [search, selectedTag, selectedCollection]);
 
   const fetchTags = useCallback(async () => {
     try {
@@ -58,19 +63,60 @@ export default function App() {
     } catch {}
   }, []);
 
+  const fetchCollections = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/collections`);
+      const data = await res.json();
+      setCollections(Array.isArray(data) ? data : []);
+    } catch {}
+  }, []);
+
+  const createCollection = async (name) => {
+    const next = name.trim();
+    if (!next) return;
+    await fetch(`${API}/collections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: next }),
+    });
+    setCollections((current) => (
+      current.includes(next) ? current : [...current, next].sort()
+    ));
+  };
+
+  const moveNoteToCollection = async (id, collection) => {
+    const next = collection.trim();
+    const res = await fetch(`${API}/notes/${id}/collection`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection: next }),
+    });
+    if (!res.ok) return;
+
+    createCollection(next);
+    setNotes((current) => current.map((note) => (
+      note.id === id ? { ...note, collection: next } : note
+    )));
+    setSelectedNote((note) => (
+      note && note.id === id ? { ...note, collection: next } : note
+    ));
+    fetchCollections();
+  };
+
   const deleteNote = async (id) => {
     await fetch(`${API}/notes/${id}`, { method: 'DELETE' });
     setSelectedNote(null);
     fetchNotes();
     fetchTags();
+    fetchCollections();
   };
 
   useEffect(() => { fetchNotes(); }, [fetchNotes]);
   useEffect(() => { fetchTags(); }, [fetchTags]);
+  useEffect(() => { fetchCollections(); }, [fetchCollections]);
 
   return (
     <div className="min-h-screen bg-[#f5f5f5]">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-screen-xl mx-auto px-5 h-14 flex items-center gap-4">
           <span className="text-lg font-bold text-[#ff2442] whitespace-nowrap select-none">
@@ -80,17 +126,17 @@ export default function App() {
             <SearchBar value={search} onChange={setSearch} />
           </div>
           <div className="flex gap-1.5 ml-auto">
-            {['card', 'image'].map((v) => (
+            {['card', 'image'].map((item) => (
               <button
-                key={v}
-                onClick={() => setView(v)}
+                key={item}
+                onClick={() => setView(item)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  view === v
+                  view === item
                     ? 'bg-[#ff2442] text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                {v === 'card' ? '卡片' : '图片'}
+                {item === 'card' ? '卡片' : '图片'}
               </button>
             ))}
           </div>
@@ -99,12 +145,16 @@ export default function App() {
       </header>
 
       <div className="max-w-screen-xl mx-auto px-5 py-6 flex gap-6">
-        {/* Sidebar */}
         <aside className="w-40 flex-shrink-0">
+          <CollectionFilter
+            collections={collections}
+            selected={selectedCollection}
+            onSelect={setSelectedCollection}
+            onCreate={createCollection}
+          />
           <TagFilter tags={tags} selected={selectedTag} onSelect={setSelectedTag} />
         </aside>
 
-        {/* Main */}
         <main className="flex-1 min-w-0">
           {loading ? (
             <div className="flex justify-center py-24">
@@ -119,11 +169,17 @@ export default function App() {
             <div className="text-center py-24 text-gray-400 select-none">
               <div className="text-5xl mb-3">📭</div>
               <div className="text-sm">
-                {search || selectedTag ? '没有匹配的笔记' : '还没有保存任何笔记'}
+                {search || selectedTag || selectedCollection ? '没有匹配的笔记' : '还没有保存任何笔记'}
               </div>
             </div>
           ) : view === 'card' ? (
-            <CardView notes={notes} onDelete={deleteNote} onSelect={setSelectedNote} />
+            <CardView
+              notes={notes}
+              collections={collections}
+              onDelete={deleteNote}
+              onMove={moveNoteToCollection}
+              onSelect={setSelectedNote}
+            />
           ) : (
             <ImageView notes={notes} onSelect={setSelectedNote} />
           )}
@@ -133,8 +189,10 @@ export default function App() {
       {selectedNote && (
         <NoteModal
           note={selectedNote}
+          collections={collections}
           onClose={() => setSelectedNote(null)}
           onDelete={deleteNote}
+          onMove={moveNoteToCollection}
         />
       )}
     </div>

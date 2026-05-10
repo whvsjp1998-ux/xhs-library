@@ -62,7 +62,15 @@ async function initDb() {
         content    TEXT    NOT NULL DEFAULT '',
         images     TEXT    NOT NULL DEFAULT '[]',
         tags       TEXT    NOT NULL DEFAULT '[]',
+        collection TEXT    NOT NULL DEFAULT '',
         url        TEXT    NOT NULL DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await client.query("ALTER TABLE notes ADD COLUMN IF NOT EXISTS collection TEXT NOT NULL DEFAULT ''");
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS collections (
+        name       TEXT PRIMARY KEY,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
@@ -171,7 +179,7 @@ app.post('/import', async (req, res) => {
 });
 
 app.get('/notes', async (req, res) => {
-  const { search, tag } = req.query;
+  const { search, tag, collection } = req.query;
   let sql = `
     SELECT
       id,
@@ -179,6 +187,7 @@ app.get('/notes', async (req, res) => {
       content,
       CASE WHEN length(images) > 1000000 THEN '[]' ELSE images END AS images,
       tags,
+      collection,
       url,
       created_at
     FROM notes
@@ -193,6 +202,10 @@ app.get('/notes', async (req, res) => {
   if (tag) {
     conditions.push(`tags ILIKE $${params.length + 1}`);
     params.push(`%"${tag}"%`);
+  }
+  if (collection) {
+    conditions.push(`collection = $${params.length + 1}`);
+    params.push(collection);
   }
 
   if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
@@ -210,6 +223,78 @@ app.get('/notes', async (req, res) => {
   } catch (e) {
     console.error('[notes] error:', e.message);
     res.status(500).json({ error: e.message });
+  } finally {
+    client?.release();
+  }
+});
+
+app.patch('/notes/:id/collection', async (req, res) => {
+  const collection = String(req.body?.collection || '').trim().slice(0, 80);
+  let client;
+  try {
+    client = await pool.connect();
+    if (collection) {
+      await client.query(
+        'INSERT INTO collections (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+        [collection]
+      );
+    }
+    const result = await client.query(
+      'UPDATE notes SET collection = $1 WHERE id = $2 RETURNING id, collection',
+      [collection, Number(req.params.id)]
+    );
+    if (!result.rowCount) {
+      res.status(404).json({ success: false, error: 'Note not found' });
+      return;
+    }
+    res.json({ success: true, ...result.rows[0] });
+  } catch (e) {
+    console.error('[collection] error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  } finally {
+    client?.release();
+  }
+});
+
+app.get('/collections', async (req, res) => {
+  let client;
+  try {
+    client = await pool.connect();
+    const result = await client.query(
+      `
+        SELECT name FROM collections
+        UNION
+        SELECT DISTINCT collection AS name FROM notes WHERE collection <> ''
+        ORDER BY name ASC
+      `
+    );
+    res.json(result.rows.map((row) => row.name));
+  } catch (e) {
+    console.error('[collections] error:', e.message);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client?.release();
+  }
+});
+
+app.post('/collections', async (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 80);
+  if (!name) {
+    res.status(400).json({ success: false, error: 'Collection name is required' });
+    return;
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query(
+      'INSERT INTO collections (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+      [name]
+    );
+    res.json({ success: true, name });
+  } catch (e) {
+    console.error('[collections] create error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
   } finally {
     client?.release();
   }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { imageUrl } from '../imageUrl.js';
 
-export default function NoteModal({ note, onClose, onDelete }) {
+export default function NoteModal({ note, collections, onClose, onDelete, onMove }) {
   const [imgIdx, setImgIdx] = useState(0);
   const total = note.images.length;
 
@@ -117,6 +117,21 @@ export default function NoteModal({ note, onClose, onDelete }) {
                 ))}
               </div>
             )}
+            <div className="mt-4">
+              <label className="block text-xs text-gray-400 mb-1">合集</label>
+              <select
+                value={note.collection || ''}
+                onChange={(e) => onMove(note.id, e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-700 outline-none focus:border-[#ff2442]"
+              >
+                <option value="">未归入合集</option>
+                {collections.map((collection) => (
+                  <option key={collection} value={collection}>
+                    {collection}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* footer */}

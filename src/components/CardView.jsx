@@ -9,7 +9,7 @@ const breakpointCols = {
   520: 1,
 };
 
-export default function CardView({ notes, onDelete, onSelect }) {
+export default function CardView({ notes, collections, onDelete, onMove, onSelect }) {
   return (
     <Masonry
       breakpointCols={breakpointCols}
@@ -45,6 +45,21 @@ export default function CardView({ notes, onDelete, onSelect }) {
                 ))}
               </div>
             )}
+            <div className="mb-2">
+              <select
+                value={note.collection || ''}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => onMove(note.id, e.target.value)}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-xs text-gray-600 outline-none focus:border-[#ff2442]"
+              >
+                <option value="">未归入合集</option>
+                {collections.map((collection) => (
+                  <option key={collection} value={collection}>
+                    {collection}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-center justify-between mt-1">
               <span className="text-xs text-gray-400">
                 {new Date(note.created_at).toLocaleDateString('zh-CN')}

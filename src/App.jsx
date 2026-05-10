@@ -27,17 +27,24 @@ export default function App() {
   const [selectedTag, setSelectedTag] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedNote, setSelectedNote] = useState(null);
+  const [error, setError] = useState('');
 
   const fetchNotes = useCallback(async () => {
     setLoading(true);
+    setError('');
     const p = new URLSearchParams();
     if (search) p.set('search', search);
     if (selectedTag) p.set('tag', selectedTag);
     try {
       const res = await fetch(`${API}/notes?${p}`);
-      setNotes(await res.json());
-    } catch {
-      // server not ready yet
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      setNotes(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setNotes([]);
+      setError(e.message || 'Server is not ready');
     } finally {
       setLoading(false);
     }
@@ -46,7 +53,8 @@ export default function App() {
   const fetchTags = useCallback(async () => {
     try {
       const res = await fetch(`${API}/tags`);
-      setTags(await res.json());
+      const data = await res.json();
+      setTags(Array.isArray(data) ? data : []);
     } catch {}
   }, []);
 
@@ -101,6 +109,11 @@ export default function App() {
           {loading ? (
             <div className="flex justify-center py-24">
               <div className="w-8 h-8 border-2 border-[#ff2442] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="text-center py-24 text-gray-500 select-none">
+              <div className="text-sm font-medium text-red-500 mb-2">服务连接失败</div>
+              <div className="text-xs text-gray-400">{error}</div>
             </div>
           ) : notes.length === 0 ? (
             <div className="text-center py-24 text-gray-400 select-none">

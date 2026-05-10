@@ -17,10 +17,32 @@ const distPath = path.join(__dirname, 'dist');
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
-});
+async function createPoolConfig() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) return { ssl: false };
+
+  try {
+    const url = new URL(connectionString);
+    const [ipv4] = await dns.promises.resolve4(url.hostname);
+    if (ipv4) {
+      console.log(`[db] using IPv4 ${ipv4} for ${url.hostname}`);
+      url.hostname = ipv4;
+      return {
+        connectionString: url.toString(),
+        ssl: { rejectUnauthorized: false },
+      };
+    }
+  } catch (e) {
+    console.warn('[db] IPv4 resolution failed, using original DATABASE_URL:', e.message);
+  }
+
+  return {
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+  };
+}
+
+const pool = new Pool(await createPoolConfig());
 
 process.on('unhandledRejection', (reason) => {
   console.error('[process] unhandled rejection:', reason);
